@@ -23,17 +23,34 @@ TOP BY PSS
 
 ## Why
 
-Cygnus's central thesis: it reports **PSS** (proportional set size), not
-raw RSS. Summing RSS across processes double-counts shared pages —
-libraries, mmap'd files, forked children sharing the same segments — and
-overstates real memory usage. PSS attributes shared memory fairly across
-the processes actually using it, so it's the number worth trusting when
-you're deciding what's actually consuming RAM.
+Cygnus doesn't invent new primitives — it correlates two that already
+exist and are already proven, and adds the layer neither one provides
+on its own.
 
-On top of that, Cygnus reads the kernel's own [PSI (Pressure Stall
-Information)](https://docs.kernel.org/accounting/psi.html) counters, so
-findings distinguish "memory looks full but the kernel isn't stalling
-anyone" from "the whole system is genuinely blocked on reclaim."
+**PSS, not RSS.** This is the same insight
+[`smem`](https://www.selenic.com/smem/) has shipped for over a decade:
+summing RSS across processes double-counts shared pages — libraries,
+mmap'd files, forked children sharing the same segments — and overstates
+real usage. PSS attributes shared memory fairly across the processes
+actually using it. If you already trust `smem` for this, Cygnus uses the
+same idea, not a new one.
+
+**PSI, not load average.** [PSI (Pressure Stall
+Information)](https://docs.kernel.org/accounting/psi.html) is the same
+kernel signal [`systemd-oomd`](https://man7.org/linux/man-pages/man8/systemd-oomd.service.8.html)
+already uses to kill processes before the kernel OOM killer wakes up,
+and the same one Android's low-memory killer uses to decide what to
+evict. On most modern systemd-based distros it's already running in the
+background. Cygnus reads it; it doesn't reimplement it.
+
+**What neither of those tools does** is what Cygnus is actually for.
+`smem` is a data reporter — no verdicts, no thresholds, no PSI. `systemd-oomd`
+is a silent background daemon — it kills, it doesn't report, and you
+can't point it at a terminal or a CI pipeline. Cygnus sits between them:
+one command that reads both signals, correlates them against
+per-process data, and turns raw numbers into plain-language findings —
+with a rules engine you can tune, and an output contract (text, TUI, or
+JSON) built for a human at a terminal and an `assert` task in CI alike.
 
 ## Features
 
