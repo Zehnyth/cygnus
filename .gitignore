@@ -1,0 +1,15 @@
+# Build output
+/bin/
+cygnus
+*.tar.gz
+
+# Go
+*.test
+*.out
+vendor/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

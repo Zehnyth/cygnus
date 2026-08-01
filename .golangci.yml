@@ -1,0 +1,29 @@
+# golangci-lint v2 config for cygnus. Run: golangci-lint run
+version: "2"
+
+linters:
+  enable:
+    - errcheck      # unchecked errors — important when reading /proc
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - unconvert
+    - bodyclose
+    - revive
+  settings:
+    revive:
+      rules:
+        - name: unreachable-code
+        - name: unused-parameter
+          disabled: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/zehnyth/cygnus
