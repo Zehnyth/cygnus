@@ -136,7 +136,8 @@ sudo install -m 755 bin/cygnus /usr/local/bin/cygnus   # optional
 # human-readable report (recommended default)
 sudo cygnus report
 
-# interactive scrollable view
+# interactive scrollable view — auto-refreshes on a timer;
+# press p to pause/resume, q to quit
 sudo cygnus report --tui
 
 # JSON, for scripts / Ansible / CI

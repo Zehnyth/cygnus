@@ -4,6 +4,8 @@
 package ui
 
 import (
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -32,13 +34,30 @@ type Model struct {
 	offset int // index of the first visible process row
 	width  int
 	height int
+
+	// fetch re-runs the collection + correlation pipeline for a live
+	// auto-refresh. nil for headless rendering (see Render), which never
+	// calls Init/Update and so never needs it.
+	fetch           func() (*types.Report, error)
+	refreshInterval time.Duration
+	paused          bool
+	fetching        bool  // an async fetch is in flight — skip starting another
+	lastErr         error // most recent refresh error, if any; cleared on success
 }
 
-// New creates a Model ready to run under tea.NewProgram.
-func New(r *types.Report) Model { return Model{report: r} }
+// New creates a Model ready to run under tea.NewProgram. fetch re-runs the
+// collection pipeline for auto-refresh; pass nil to disable refreshing.
+func New(r *types.Report, fetch func() (*types.Report, error)) Model {
+	return Model{report: r, fetch: fetch, refreshInterval: defaultRefreshInterval}
+}
 
-// Init satisfies tea.Model; cygnus has no startup command to run.
-func (m Model) Init() tea.Cmd { return nil }
+// Init satisfies tea.Model, kicking off the refresh timer when fetch is set.
+func (m Model) Init() tea.Cmd {
+	if m.fetch == nil {
+		return nil
+	}
+	return tickCmd(m.refreshInterval)
+}
 
 // visibleRows is how many process rows fit given the current height.
 func (m Model) visibleRows() int {
@@ -52,18 +71,38 @@ func (m Model) visibleRows() int {
 	return n
 }
 
-// Update satisfies tea.Model, handling window resizes and the scroll/quit
-// keybindings (arrow keys, vim keys, page up/down, g/G, q).
+// Update satisfies tea.Model, handling window resizes, the scroll/quit
+// keybindings (arrow keys, vim keys, page up/down, g/G, q), and the
+// background auto-refresh cycle (tickMsg/reportMsg, p to pause/resume).
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.clampScroll()
+	case tickMsg:
+		next := tickCmd(m.refreshInterval)
+		if m.paused || m.fetching || m.fetch == nil {
+			return m, next
+		}
+		m.fetching = true
+		return m, tea.Batch(fetchCmd(m.fetch), next)
+	case reportMsg:
+		m.fetching = false
+		if msg.err != nil {
+			// Transient collection error: keep showing the last good
+			// report, surface the error, try again next tick.
+			m.lastErr = msg.err
+			return m, nil
+		}
+		m.lastErr = nil
+		m.applyReport(msg.report)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "p":
+			m.paused = !m.paused
 		case "up", "k":
 			if m.cursor > 0 {
 				m.cursor--
@@ -97,6 +136,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// applyReport swaps in a freshly fetched report, keeping the cursor on the
+// same process (by PID) across the refresh when it's still present. If that
+// process is gone (exited), the cursor holds its old numeric row instead of
+// jumping back to the top — "your place" is the spot on screen, not just
+// the PID, when there's nothing better to track.
+func (m *Model) applyReport(r *types.Report) {
+	selectedPID := -1
+	if m.cursor >= 0 && m.cursor < len(m.report.TopByPSS) {
+		selectedPID = m.report.TopByPSS[m.cursor].PID
+	}
+	newCursor := m.cursor
+
+	m.report = r
+
+	if selectedPID != -1 {
+		for i, p := range r.TopByPSS {
+			if p.PID == selectedPID {
+				newCursor = i
+				break
+			}
+		}
+	}
+	switch {
+	case newCursor >= len(r.TopByPSS):
+		newCursor = len(r.TopByPSS) - 1
+	case newCursor < 0:
+		newCursor = 0
+	}
+	m.cursor = newCursor
+	m.clampScroll()
 }
 
 // clampScroll keeps the cursor within the visible window, scrolling the
@@ -148,6 +219,7 @@ func (m Model) layout() string {
 		renderProcessTable(m.report.TopByPSS, m.cursor, m.offset, m.visibleRows(), width),
 		"",
 		renderFooter(width),
+		renderRefreshStatus(width, m.paused, m.lastErr),
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }

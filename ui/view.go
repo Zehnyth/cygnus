@@ -286,10 +286,27 @@ func renderFooter(width int) string {
 	keys := strings.Join([]string{
 		hint("↑/↓", "scroll"),
 		hint("g/G", "top/bottom"),
+		hint("p", "pause"),
 		hint("enter", "inspect"),
 		hint("q", "quit"),
 	}, sep)
 	return lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(keys)
+}
+
+// renderRefreshStatus draws a single centered status line for the
+// auto-refresh cycle: a paused notice takes priority over a stale error
+// (once resumed and healthy again, both clear and this renders blank).
+func renderRefreshStatus(width int, paused bool, lastErr error) string {
+	switch {
+	case paused:
+		return lipgloss.NewStyle().Foreground(gold).Width(width).Align(lipgloss.Center).
+			Render("⏸ auto-refresh paused — press p to resume")
+	case lastErr != nil:
+		msg := truncate(fmt.Sprintf("⚠ refresh failed, showing last good data: %v", lastErr), width)
+		return lipgloss.NewStyle().Foreground(garnet).Width(width).Align(lipgloss.Center).Render(msg)
+	default:
+		return ""
+	}
 }
 
 // truncate shortens s to at most max runes, appending "…" if it was cut.
