@@ -109,6 +109,14 @@ func renderMemoryPanel(m *types.MemInfo, width int, verdictTier Tier, verdictWor
 // not a sibling of it. Every context row — Total included — goes through
 // the same three-column memInfoRow (label, value, note) so nothing is
 // ragged: a blank note column reads as an omission, so every row gets one.
+//
+// Spacing: exactly one blank line total, between the status block and the
+// content rows — the same rhythm PRESSURE uses (status, blank, then every
+// row tight against its neighbor). The content spans three logical groups
+// (headline, cache/slab/dirty, swap) but that grouping is conveyed by the
+// labels themselves, not by inserting extra blank lines between them —
+// PRESSURE and PROCESSES don't do that either, and a per-row-count blank
+// line here read as an unexplained gap rather than a deliberate rhythm.
 func memoryPanelLines(m *types.MemInfo, width int, verdictTier Tier, verdictWord string) []string {
 	usedPct := 100 - m.AvailablePct
 	barWidth := innerWidth(width) - 12
@@ -129,17 +137,15 @@ func memoryPanelLines(m *types.MemInfo, width int, verdictTier Tier, verdictWord
 	}
 
 	lines := renderStatusLine(verdictTier, verdictWord, verdictDescription[verdictTier])
+	lines = append(lines, "")
 	return append(lines,
-		"",
 		memInfoRow("Total", fmt.Sprintf("%.1f GB", utils.GB(m.TotalKB)), "physical RAM"),
 		usageLine,
 		memInfoRow("Free", fmt.Sprintf("%.1f GB", utils.GB(m.AvailableKB)), "available now"),
-		"",
 		memInfoRow("Page Cache", fmt.Sprintf("%.1f GB", utils.GB(m.CachedKB)), "reclaimable"),
 		memInfoRow("Buffers", fmt.Sprintf("%.1f GB", utils.GB(m.BuffersKB)), "reclaimable"),
 		memInfoRow("Slab", fmt.Sprintf("%.1f GB", utils.GB(m.SReclaimKB+m.SUnreclaimKB)), "kernel memory"),
 		memInfoRow("Dirty", fmt.Sprintf("%.0f MB", float64(m.DirtyKB)/1024), "pending write"),
-		"",
 		memInfoRow("Swap Used", fmt.Sprintf("%.1f GB", utils.GB(swapUsedKB)), swapNote),
 	)
 }
