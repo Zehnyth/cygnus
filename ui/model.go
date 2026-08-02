@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,15 +17,15 @@ import (
 // pressure panels sit side by side instead of stacked.
 const wideLayoutThreshold = 78
 
-// chromeRows is the number of terminal lines consumed by everything that
-// isn't a process row: banner, status bar, the two stat panels, findings,
-// borders, footer, and spacing. Used to size the scrolling process window
-// so the whole view fits without the terminal itself scrolling.
-const chromeRows = 24
-
 // minVisibleRows keeps at least this many process rows on screen even in
 // a very short terminal (the view may overflow, but stays usable).
 const minVisibleRows = 5
+
+// processTableChrome is the fixed number of lines the PROCESSES panel
+// consumes beyond its data rows: title, rule, two borders, and the column
+// header — plus one reserved unconditionally for the "showing X–Y of Z"
+// line so the first scroll doesn't suddenly overflow by a row.
+const processTableChrome = 6
 
 // Model is the Bubble Tea model for the interactive report view: a
 // Report plus the scroll/cursor state needed to browse its process table.
@@ -61,7 +62,7 @@ func (m Model) Init() tea.Cmd {
 
 // visibleRows is how many process rows fit given the current height.
 func (m Model) visibleRows() int {
-	n := m.height - chromeRows
+	n := m.height - m.chromeHeight()
 	if n < minVisibleRows {
 		n = minVisibleRows
 	}
@@ -69,6 +70,75 @@ func (m Model) visibleRows() int {
 		n = total
 	}
 	return n
+}
+
+// chromeHeight measures every section except the process table's data
+// rows by actually rendering them, rather than guessing at a fixed line
+// count. Findings count (more rules fire at once exactly when the system
+// is under real pressure), footer/finding text wrapping at narrow widths,
+// and stacked-vs-side-by-side panel layout all change how tall the chrome
+// actually is — a fixed constant reliably undercounts that and lets the
+// rendered frame grow taller than the terminal. When that happens, the
+// *top* of the frame (banner, the memory usage bar, the PSI
+// stable/elevated/stalling status) is what scrolls out of view, since the
+// process table and footer are rendered after it. Measuring instead of
+// guessing is the fix.
+func (m Model) chromeHeight() int {
+	width := m.width
+	if width < minWidth {
+		width = minWidth
+	}
+	chrome := lipgloss.JoinVertical(lipgloss.Left,
+		renderBanner(width),
+		"",
+		m.topPanels(width),
+		renderFindings(m.report.Findings, width),
+		"",
+		renderFooter(width),
+		renderRefreshStatus(width, m.paused, m.lastErr),
+	)
+	return lipgloss.Height(chrome) + processTableChrome
+}
+
+// topPanels lays out the MEMORY and PRESSURE panels side by side above
+// wideLayoutThreshold, stacked below it. In the side-by-side case their
+// content is padded to equal line counts first, so both panels' bottom
+// borders land on the same row instead of one trailing off short — MEMORY
+// and PRESSURE's natural line counts don't match, and that mismatch is
+// exactly what reads as "uneven" once they're side by side. Their top
+// borders/headers are already guaranteed level: both go through
+// panelTitled and are joined with lipgloss.JoinHorizontal(lipgloss.Top,
+// ...), which aligns line 0 of each block regardless of how many lines
+// follow.
+func (m Model) topPanels(width int) string {
+	verdictTier, verdictWord := worstVerdict(m.report)
+
+	if width >= wideLayoutThreshold {
+		half := width/2 - 1
+		rest := width - half
+		memLines := memoryPanelLines(m.report.Mem, half, verdictTier, verdictWord)
+		presLines := pressurePanelLines(m.report.Pressure, m.report.Findings)
+
+		target := len(memLines)
+		if len(presLines) > target {
+			target = len(presLines)
+		}
+		for len(memLines) < target {
+			memLines = append(memLines, "")
+		}
+		for len(presLines) < target {
+			presLines = append(presLines, "")
+		}
+
+		return lipgloss.JoinHorizontal(lipgloss.Top,
+			panelTitled(half, "MEMORY", strings.Join(memLines, "\n")),
+			panelTitled(rest, "PRESSURE", strings.Join(presLines, "\n")),
+		)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left,
+		renderMemoryPanel(m.report.Mem, width, verdictTier, verdictWord),
+		renderPressurePanel(m.report.Pressure, m.report.Findings, width),
+	)
 }
 
 // Update satisfies tea.Model, handling window resizes, the scroll/quit
@@ -196,27 +266,12 @@ func (m Model) layout() string {
 		width = minWidth
 	}
 
-	var top string
-	if width >= wideLayoutThreshold {
-		half := width/2 - 1
-		top = lipgloss.JoinHorizontal(lipgloss.Top,
-			renderMemoryPanel(m.report.Mem, half),
-			renderPressurePanel(m.report.Pressure, width-half),
-		)
-	} else {
-		top = lipgloss.JoinVertical(lipgloss.Left,
-			renderMemoryPanel(m.report.Mem, width),
-			renderPressurePanel(m.report.Pressure, width),
-		)
-	}
-
 	sections := []string{
 		renderBanner(width),
-		statusBar(m.report, width),
 		"",
-		top,
+		m.topPanels(width),
 		renderFindings(m.report.Findings, width),
-		renderProcessTable(m.report.TopByPSS, m.cursor, m.offset, m.visibleRows(), width),
+		renderProcessTable(m.report.TopByPSS, m.cursor, m.offset, m.visibleRows(), width, m.report.Mem.TotalKB),
 		"",
 		renderFooter(width),
 		renderRefreshStatus(width, m.paused, m.lastErr),

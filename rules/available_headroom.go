@@ -21,10 +21,10 @@ func availableHeadroom(cfg types.Config, r *types.Report, _ []types.Proc) *types
 	switch {
 	case r.Mem.AvailablePct < cfg.AvailableCritPct:
 		return &types.Finding{Severity: types.Crit, Text: fmt.Sprintf(
-			"Only %.1f%% memory available — OOM kill risk is imminent.", r.Mem.AvailablePct)}
+			"Memory is nearly exhausted (%.1f%% free). The kernel may start killing processes to reclaim memory.", r.Mem.AvailablePct)}
 	case r.Mem.AvailablePct < cfg.AvailableWarnPct:
 		return &types.Finding{Severity: types.Warn, Text: fmt.Sprintf(
-			"%.1f%% memory available — headroom is low.", r.Mem.AvailablePct)}
+			"Available memory is low (%.1f%% free).", r.Mem.AvailablePct)}
 	}
 	return nil
 }
