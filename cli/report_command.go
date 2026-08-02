@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zehnyth/cygnus/services"
+	"github.com/zehnyth/cygnus/types"
 	"github.com/zehnyth/cygnus/ui"
 )
 
@@ -41,7 +42,8 @@ var reportCmd = &cobra.Command{
 			enc.SetIndent("", "  ")
 			return enc.Encode(rep)
 		case tuiMode:
-			p := tea.NewProgram(ui.New(rep), tea.WithAltScreen())
+			fetch := func() (*types.Report, error) { return services.Generate(cfg, match, effectiveTop) }
+			p := tea.NewProgram(ui.New(rep, fetch), tea.WithAltScreen())
 			_, err := p.Run()
 			return err
 		default:

@@ -21,7 +21,7 @@ func threadExplosion(cfg types.Config, _ *types.Report, procs []types.Proc) *typ
 	for _, p := range procs {
 		if p.Threads > cfg.ThreadExplosionCount {
 			return &types.Finding{Severity: types.Warn, Text: fmt.Sprintf(
-				"%s (pid %d) has %d threads — possible thread leak.", p.Comm, p.PID, p.Threads)}
+				"%s (PID %d) is running %d threads — unusually high, and often a sign of a thread leak.", p.Comm, p.PID, p.Threads)}
 		}
 	}
 	return nil

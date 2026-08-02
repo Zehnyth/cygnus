@@ -14,4 +14,10 @@ const (
 type Finding struct {
 	Severity Severity `json:"severity"`
 	Text     string   `json:"text"`
+	// Rule is the originating Rule.Name (see rules.Register), letting
+	// callers trace a finding back to what produced it — e.g. so the TUI
+	// can key a panel's status off the same rule-engine truth as the
+	// FINDINGS list, instead of recomputing severity independently with a
+	// second set of thresholds that can disagree with the first.
+	Rule string `json:"rule,omitempty"`
 }

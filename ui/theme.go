@@ -32,9 +32,6 @@ var (
 	ink = lipgloss.AdaptiveColor{Light: "#161410", Dark: "#161410"}
 	// onFill is the light foreground for dark fills, bright in both modes.
 	onFill = lipgloss.AdaptiveColor{Light: "#FFF7EC", Dark: "#FFF7EC"}
-	// statusFill is the solid strip behind the status-bar summary — a deep
-	// emerald in both modes so cream text always has strong contrast.
-	statusFill = lipgloss.AdaptiveColor{Light: "#065F46", Dark: "#0B3D2E"}
 )
 
 // Tier is the shared three-level scale used for coloring across the TUI —
@@ -118,11 +115,14 @@ func innerWidth(total int) int {
 	return w
 }
 
-// panelTitled draws a panel with a heading line and a rule under it.
+// panelTitled draws a panel with a marker-prefixed heading line and a rule
+// under it. The "▸ " marker is the one place every panel's identity is
+// established, so all four (MEMORY, PRESSURE, FINDINGS, PROCESSES) read as
+// one consistent system rather than four independently styled boxes.
 func panelTitled(total int, heading, content string) string {
 	inner := innerWidth(total)
 	rule := lipgloss.NewStyle().Foreground(emeraldRule).Render(strings.Repeat("─", inner))
-	body := styleSectionHeading.Render(heading) + "\n" + rule + "\n" + content
+	body := styleSectionHeading.Render("▸ "+heading) + "\n" + rule + "\n" + content
 	return panel(total, body)
 }
 
@@ -141,12 +141,14 @@ func badge(sev types.Severity) string {
 		Render(fmt.Sprintf("%-4s", label))
 }
 
-// usageBar renders a filled/empty block bar colored by threshold — the
-// same Tier scale the correlation rules effectively use, so the bar's
-// color always agrees with the findings text beside it.
-func usageBar(pct float64, width int) string {
-	if width < 4 {
-		width = 4
+// drawBar renders a filled/empty block-character bar of the given width,
+// filled proportionally to pct (0-100; callers clamp anything that can
+// exceed that range before calling) and colored with color for the filled
+// portion — the one bar-drawing primitive every meter in the TUI (memory
+// stat rows, PSI rows) builds on, so they all look and behave the same way.
+func drawBar(pct float64, width int, color lipgloss.TerminalColor) string {
+	if width < 1 {
+		width = 1
 	}
 	filled := int(pct / 100 * float64(width))
 	if filled > width {
@@ -156,7 +158,7 @@ func usageBar(pct float64, width int) string {
 		filled = 0
 	}
 
-	full := lipgloss.NewStyle().Foreground(usageTier(pct).Color()).Render(strings.Repeat("█", filled))
+	full := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled))
 	empty := lipgloss.NewStyle().Foreground(emeraldRule).Render(strings.Repeat("░", width-filled))
 	return full + empty
 }
@@ -176,11 +178,6 @@ func usageTier(pct float64) Tier {
 	default:
 		return TierGood
 	}
-}
-
-// statRow renders a "label   value" line with consistent label width.
-func statRow(label, value string) string {
-	return lipgloss.NewStyle().Foreground(textDim).Width(12).Render(label) + styleBody.Render(value)
 }
 
 // gradientText interpolates each rune's color between two hex colors.

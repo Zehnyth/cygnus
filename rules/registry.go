@@ -36,7 +36,9 @@ func RunRules(cfg types.Config, r *types.Report, procs []types.Proc) []types.Fin
 			continue
 		}
 		if f := rule.Check(cfg, r, procs); f != nil {
-			findings = append(findings, *f)
+			finding := *f
+			finding.Rule = rule.Name
+			findings = append(findings, finding)
 		}
 	}
 	return findings

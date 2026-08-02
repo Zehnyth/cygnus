@@ -26,7 +26,7 @@ func swapVictim(cfg types.Config, _ *types.Report, procs []types.Proc) *types.Fi
 	}
 	if worst.SwapKB > cfg.SwapVictimKB {
 		return &types.Finding{Severity: types.Warn, Text: fmt.Sprintf(
-			"%s (pid %d) has %.1f GB swapped out — it was pushed out of RAM.", worst.Comm, worst.PID, float64(worst.SwapKB)/1048576)}
+			"%s (PID %d) has %.1f GB swapped to disk, which will slow it down. This typically happens after a period of low memory.", worst.Comm, worst.PID, float64(worst.SwapKB)/1048576)}
 	}
 	return nil
 }
