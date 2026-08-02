@@ -60,7 +60,9 @@ func (m Model) Init() tea.Cmd {
 	return tickCmd(m.refreshInterval)
 }
 
-// visibleRows is how many process rows fit given the current height.
+// visibleRows is how many process rows fit given the current height. Used
+// during Update() (scroll clamping) where there's no reason to render the
+// full frame just to measure it — see chromeHeight.
 func (m Model) visibleRows() int {
 	n := m.height - m.chromeHeight()
 	if n < minVisibleRows {
@@ -72,11 +74,35 @@ func (m Model) visibleRows() int {
 	return n
 }
 
-// chromeHeight measures every section except the process table's data
-// rows by actually rendering them, rather than guessing at a fixed line
-// count. Findings count (more rules fire at once exactly when the system
-// is under real pressure), footer/finding text wrapping at narrow widths,
-// and stacked-vs-side-by-side panel layout all change how tall the chrome
+// topAndBottomSections renders everything except the process table's data
+// rows, split into what comes before it and what comes after. Both
+// chromeHeight (sizing, called from Update()) and layout (the real frame,
+// called from View()) go through this exactly once each, so banner/
+// topPanels/findings/footer/refreshStatus are never rendered twice for
+// the same frame — they used to be: layout() built them directly AND
+// chromeHeight() rebuilt them all over again just to measure a height,
+// discarding the result. Same output, half the work, and one less place
+// for the two renders to ever disagree.
+func (m Model) topAndBottomSections(width int) (top, bottom string) {
+	top = lipgloss.JoinVertical(lipgloss.Left,
+		renderBanner(width),
+		"",
+		m.topPanels(width),
+		renderFindings(m.report.Findings, width),
+	)
+	bottom = lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		renderFooter(width),
+		renderRefreshStatus(width, m.paused, m.lastErr),
+	)
+	return top, bottom
+}
+
+// chromeHeight measures every section except the process table's data rows
+// by actually rendering them, rather than guessing at a fixed line count.
+// Findings count (more rules fire at once exactly when the system is under
+// real pressure), footer/finding text wrapping at narrow widths, and
+// stacked-vs-side-by-side panel layout all change how tall the chrome
 // actually is — a fixed constant reliably undercounts that and lets the
 // rendered frame grow taller than the terminal. When that happens, the
 // *top* of the frame (banner, the memory usage bar, the PSI
@@ -88,16 +114,8 @@ func (m Model) chromeHeight() int {
 	if width < minWidth {
 		width = minWidth
 	}
-	chrome := lipgloss.JoinVertical(lipgloss.Left,
-		renderBanner(width),
-		"",
-		m.topPanels(width),
-		renderFindings(m.report.Findings, width),
-		"",
-		renderFooter(width),
-		renderRefreshStatus(width, m.paused, m.lastErr),
-	)
-	return lipgloss.Height(chrome) + processTableChrome
+	top, bottom := m.topAndBottomSections(width)
+	return lipgloss.Height(top) + lipgloss.Height(bottom) + processTableChrome
 }
 
 // topPanels lays out the MEMORY and PRESSURE panels side by side above
@@ -266,17 +284,18 @@ func (m Model) layout() string {
 		width = minWidth
 	}
 
-	sections := []string{
-		renderBanner(width),
-		"",
-		m.topPanels(width),
-		renderFindings(m.report.Findings, width),
-		renderProcessTable(m.report.TopByPSS, m.cursor, m.offset, m.visibleRows(), width, m.report.Mem.TotalKB),
-		"",
-		renderFooter(width),
-		renderRefreshStatus(width, m.paused, m.lastErr),
+	top, bottom := m.topAndBottomSections(width)
+
+	visRows := m.height - lipgloss.Height(top) - lipgloss.Height(bottom) - processTableChrome
+	if visRows < minVisibleRows {
+		visRows = minVisibleRows
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	if total := len(m.report.TopByPSS); visRows > total {
+		visRows = total
+	}
+
+	procTable := renderProcessTable(m.report.TopByPSS, m.cursor, m.offset, visRows, width, m.report.Mem.TotalKB)
+	return lipgloss.JoinVertical(lipgloss.Left, top, procTable, bottom)
 }
 
 // Render composes the view at a fixed width/height without a live
